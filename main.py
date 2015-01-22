@@ -17,10 +17,51 @@
 import webapp2
 import os
 import jinja2
+import re
+import string
+import hmac
+import hashlib
+import random
+
+from google.appengine.ext import db
 
 template_dir = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = jinja2.Environment(loader=jinja2.FileSystemLoader(template_dir),
 							   autoescape=True)
+
+#  Regular Expression Checks on username, password, e-mail
+
+USER_RE = re.compile(r'^[a-zA-Z0-9_-]{3,20}$')
+def valid_username(username):
+	return username and USER_RE.match(username)
+
+PASS_RE = re.compile(r'^.{3,20}$')
+def valid_password(password):
+	return password and PASS_RE.match(password)
+
+EMAIL_RE = re.compile(r'^[\S]+@[\S]+\.[\S]+$') 
+def valid_email(email):
+	return not email or EMAIL_RE.match(email)
+
+#  Securing Login with Hashing Functions
+
+SECRET = 'imasecret'
+def hash_str(s):
+	return hmac.new(SECRET, s).hexdigest()
+
+def make_secure_val(s):
+	return s + "|" + hash_str(s)
+
+def make_salt():
+	return "".join([random.choice(string.letters) for i in xrange(5)])
+
+def make_pw_hash(name, pw, salt=None):
+	if not salt:
+		salt = make_salt()
+
+	hash_name_pw = hashlib.sha256(name+pw+salt).hexdigest()
+	return hash_name_pw + "," + salt
+
 
 class MainHandler(webapp2.RequestHandler):
 	def write(self, *a, **kw):
@@ -33,10 +74,80 @@ class MainHandler(webapp2.RequestHandler):
 	def render(self, template, **kw):
 		self.write(self.render_str(template, **kw))
 
+
+class Users(db.Model):
+	username = db.StringProperty(required=True)
+	password = db.StringProperty(required=True)
+	created = db.DateTimeProperty(auto_now_add=True)
+	email = db.StringProperty(required=False)
+
+
+class WelcomePage(MainHandler):
+	def get(self):
+		self.write("Why, hello there. ")
+		user_id = self.request.cookies.get('user_id')
+		self.write("Here's my cookie: %s " % str(user_id))
+
+		users = db.GqlQuery("SELECT * FROM Users")
+		for user in users:
+			print user.username
+
+
+
 class SignUpPage(MainHandler):
 	def get(self):
 		self.render("front.html")
+		self.response.headers['Content-Type'] = 'text/html'
+		
+
+
+	def post(self):
+		have_error = False
+
+		username = self.request.get('username')
+		password = self.request.get('password')
+		verify = self.request.get('verify')
+		email = self.request.get('email')
+
+		params = dict(username=username,
+					  email=email)
+
+		if not valid_username(username):
+			have_error = True
+			print "VALIDATED USERNAME"
+			params['error_username'] = "Looks like that's not a valid user name"
+
+		if not valid_password(password):
+			have_error = True
+			params['error_password'] = "Not a valid password."
+		elif password != verify:
+			have_error = True
+			params['error_verify'] = "You're passwords did not match."
+
+		if not valid_email(email):
+			have_error = True
+			params['error_email'] = "Not a valid email."
+
+		if have_error:
+			self.render("front.html", **params)
+		else:
+			self.response.headers.add_header('Set-Cookie', 'user_id=%s' % str(username))
+			print "JUST BEFORE P PUT STUFF"
+			p = Users(username=username, password=password, email=email)
+			p.put()
+			print "JUST AFTER"
+			self.redirect("/welcome")
+
 
 app = webapp2.WSGIApplication([
-    ('/SignUpPage', SignUpPage)
+    ('/signup', SignUpPage),
+    ('/welcome', WelcomePage)
 ], debug=True)
+
+
+
+
+
+
+
+
