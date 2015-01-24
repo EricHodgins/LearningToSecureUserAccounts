@@ -100,6 +100,14 @@ class WelcomePage(MainHandler):
 			self.redirect('/signup')
 
 
+class Logout(MainHandler):
+	def get(self):
+		the_cookie = self.request.cookies.get('user_id')
+		self.response.headers.add_header('Set-Cookie', 'user_id=%s; Path=/' % str(""))
+		self.redirect('/signup')
+
+
+
 class LoginPage(MainHandler):
 	def get(self):
 		self.render("login.html")
@@ -178,7 +186,8 @@ class SignUpPage(MainHandler):
 app = webapp2.WSGIApplication([
     ('/signup', SignUpPage),
     ('/welcome', WelcomePage),
-    ('/login', LoginPage)
+    ('/login', LoginPage),
+    ('/logout', Logout)
 ], debug=True)
 
 
