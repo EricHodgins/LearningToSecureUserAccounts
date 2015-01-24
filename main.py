@@ -62,6 +62,11 @@ def make_pw_hash(name, pw, salt=None):
 	hash_name_pw = hashlib.sha256(name+pw+salt).hexdigest()
 	return hash_name_pw + "," + salt
 
+def check_secure(h):
+	val = h.split('|')[0]
+	if h == make_secure_val(val):
+		return val
+
 
 class MainHandler(webapp2.RequestHandler):
 	def write(self, *a, **kw):
@@ -84,13 +89,17 @@ class Users(db.Model):
 
 class WelcomePage(MainHandler):
 	def get(self):
-		self.write("Why, hello there. ")
-		user_id = self.request.cookies.get('user_id')
-		self.write("Here's my cookie: %s " % str(user_id))
+		the_cookie = self.request.cookies.get('user_id')
+		u_id = int(the_cookie.split('|')[0])
+		user = Users.get_by_id(u_id)
 
-		users = db.GqlQuery("SELECT * FROM Users")
-		for user in users:
-			print user.username
+		cookie_val = check_secure(the_cookie)
+		print "The cookie_vale is: %s" % cookie_val
+		if user and cookie_val:
+			self.write("<br>Hello, %s" % user.username)
+		else:
+			self.redirect('/signup')
+
 
 
 
@@ -114,7 +123,6 @@ class SignUpPage(MainHandler):
 
 		if not valid_username(username):
 			have_error = True
-			print "VALIDATED USERNAME"
 			params['error_username'] = "Looks like that's not a valid user name"
 
 		if not valid_password(password):
@@ -131,12 +139,19 @@ class SignUpPage(MainHandler):
 		if have_error:
 			self.render("front.html", **params)
 		else:
-			self.response.headers.add_header('Set-Cookie', 'user_id=%s' % str(username))
-			print "JUST BEFORE P PUT STUFF"
-			p = Users(username=username, password=password, email=email)
-			p.put()
-			print "JUST AFTER"
-			self.redirect("/welcome")
+			check_username = db.GqlQuery("SELECT * FROM Users WHERE username = :1 limit 1", username)
+			if check_username.get() != None:
+				params['error_username'] = "Sorry, that username already exists."
+				self.render("front.html", **params)
+				return 
+			if check_username.get() == None:
+				user_hash = make_pw_hash(username, password)
+				
+				p = Users(username=username, password=user_hash, email=email)
+				p.put()
+				secured_hash = make_secure_val(str(p.key().id()))
+				self.response.headers.add_header('Set-Cookie', 'user_id=%s; Path=/' % str(secured_hash))
+				self.redirect("/welcome")
 
 
 app = webapp2.WSGIApplication([
