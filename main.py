@@ -94,20 +94,41 @@ class WelcomePage(MainHandler):
 		user = Users.get_by_id(u_id)
 
 		cookie_val = check_secure(the_cookie)
-		print "The cookie_vale is: %s" % cookie_val
 		if user and cookie_val:
 			self.write("<br>Hello, %s" % user.username)
 		else:
 			self.redirect('/signup')
 
 
+class LoginPage(MainHandler):
+	def get(self):
+		self.render("login.html")
+
+	def post(self):
+		username = self.request.get('username')
+		password = self.request.get('password')
+
+
+		find_user = db.GqlQuery("SELECT * FROM Users WHERE username = :1 limit 1", username)
+		user = find_user.get()
+		user_id = user.key().id()
+		if user != None:
+			pwd = user.password
+			salt = pwd.split(',')[1]
+
+			if make_pw_hash(username, password, salt=salt) == pwd:
+				secured_hash = make_secure_val(str(user_id))
+				self.response.headers.add_header('Set-Cookie', 'user_id=%s; Path=/' % str(secured_hash))
+				self.redirect('/welcome')
+
+		error_log = "Sorry, That's an invlid login."
+		self.render("login.html", error_login=error_log)
 
 
 class SignUpPage(MainHandler):
 	def get(self):
 		self.render("front.html")
 		self.response.headers['Content-Type'] = 'text/html'
-		
 
 
 	def post(self):
@@ -156,7 +177,8 @@ class SignUpPage(MainHandler):
 
 app = webapp2.WSGIApplication([
     ('/signup', SignUpPage),
-    ('/welcome', WelcomePage)
+    ('/welcome', WelcomePage),
+    ('/login', LoginPage)
 ], debug=True)
 
 
